@@ -3,6 +3,7 @@
 export(evaluatePerformance)
 export(generateMissingData)
 export(methyLImp2)
+export(mod_methyLImp2)
 import(ChAMPdata)
 importFrom(BiocParallel,SnowParam)
 importFrom(BiocParallel,bplapply)

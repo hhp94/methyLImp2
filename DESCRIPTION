@@ -16,13 +16,24 @@ Authors@R: c(
     role = c("aut"),
     comment = c(ORCID = "0000-0001-7601-321X")))  
 Description: This package allows to estimate missing values in DNA methylation data. methyLImp method is based on linear regression since methylation levels show a high degree of inter-sample correlation. Implementation is parallelised over chromosomes since probes on different chromosomes are usually independent. Mini-batch approach to reduce the runtime in case of large number of samples is available.
-Imports: BiocParallel, parallel, stats, methods, corpcor, SummarizedExperiment, utils
+Imports: 
+    BiocParallel,
+    parallel,
+    stats,
+    methods,
+    corpcor,
+    SummarizedExperiment,
+    utils,
+    parallelly,
+    future.apply,
+    progressr,
+    future
 Depends: R (>= 4.3.0), ChAMPdata
 URL: https://github.com/annaplaksienko/methyLImp2 
 BugReports: https://github.com/annaplaksienko/methyLImp2/issues 
 License: GPL-3
 Encoding: UTF-8
-RoxygenNote: 7.3.1
+RoxygenNote: 7.3.2
 biocViews: DNAMethylation, Microarray, Software, MethylationArray, Regression
 Suggests: 
     BiocStyle,

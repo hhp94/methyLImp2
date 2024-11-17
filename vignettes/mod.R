@@ -1,29 +1,49 @@
-data(beta)
-dim(beta)
-
-set.seed(1234)
-beta_with_nas <- generateMissingData(beta, lambda = 3.5)$beta_with_nas
-
-utils::data("EPIC.manifest.hg19", package = "ChAMPdata", envir = environment())
-anno <- data.frame(cpg = rownames(EPIC.manifest.hg19), chr = EPIC.manifest.hg19$CpG_chrm)
-
 library(profvis)
-run_methyLImp2 <- function() {
-  methyLImp2(
-    input = beta_with_nas,
-    type = "user",
-    minibatch_frac = 1,
-    annotation = anno,
-    BPPARAM = BiocParallel::SerialParam()
+library(matrixStats)
+
+load_all()
+
+# colsums once
+# split internal into multiple functions
+# change skip ids into vector of character instead because its more intuitive
+# change passing around of id numbers to passing around characters
+# change the look up apply loop with split function
+# make sure the colnames and row.names are unique and annotation must have no repeat
+
+s <- sim_mat(10000, 500, nchr = 2, perc_NA = 0.5)$input |> is.na()
+# s <- is.na(mtcars)
+s |> head1()
+s <- matrix(as.numeric(s), nrow = nrow(s), ncol = ncol(s))
+s |> head1()
+
+s_pasted <- colCollapse(s)
+s_pasted
+
+bench::mark(
+apply(s, 2, \(x){paste(x, collapse = "")}),
+apply(t(s), 1, \(x){paste(x, collapse = "")})
+)
+
+split(as.integer(s), f = rep(colnames(s), each = nrow(s)))
+apply()
+
+na_index <- as.data.frame(which(s, arr.ind = TRUE, useNames = FALSE))
+names(na_index) <- c("row_index", "col_index")
+na_index |> head()
+na_index
+collapsed <- fsummarize(
+  fgroup_by(na_index, col_index),
+  row_index = paste(row_index, collapse = ",")
+)
+collapsed$row_index |> nchar() |> max()
+collapsed |> head()
+
+bench::mark(
+  aggregate(row_index ~ col_index, data = na_index, function(x)
+    paste(x, collapse = ",")),
+  fsummarize(
+    fgroup_by(na_index, col_index),
+    row_index = paste(row_index, collapse = ",")
   )
-}
-
-pv <- profvis(run_methyLImp2())
-pv
-
-library(bootSVD)
-library(corpcor)
-
-Y <- run_methyLImp2()
-Y |> dim()
-microbenchmark::microbenchmark(corpcor::fast.svd(Y), bootSVD::fastSVD(Y))
+)
+hash
