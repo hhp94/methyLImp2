@@ -44,6 +44,16 @@ sim_mat <- function(n = 100, m = 100, nchr = 2, perc_NA = 0.5, perc_col_NA = 0.5
   return(list(input = d, user = user))
 }
 
+methyLImp2_internal_args <- function() {
+  list(
+    min = 0,
+    max = 1,
+    skip_imputation_ids = NULL,
+    minibatch_frac = 1,
+    minibatch_reps = 1
+  )
+}
+
 head1 <- function(obj, n = 6, m = 6, ...) {
   head(obj, c(n, m), ...)
 }

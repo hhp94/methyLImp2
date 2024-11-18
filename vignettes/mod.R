@@ -1,5 +1,4 @@
 library(profvis)
-library(matrixStats)
 
 load_all()
 
@@ -10,40 +9,43 @@ load_all()
 # change the look up apply loop with split function
 # make sure the colnames and row.names are unique and annotation must have no repeat
 
-s <- sim_mat(10000, 500, nchr = 2, perc_NA = 0.5)$input |> is.na()
-# s <- is.na(mtcars)
-s |> head1()
-s <- matrix(as.numeric(s), nrow = nrow(s), ncol = ncol(s))
-s |> head1()
+prev_internal <- function() {
+  do.call(
+    methyLImp2_internal,
+    args = c(list(dat = s$input), methyLImp2_internal_args())
+  )
+}
 
-s_pasted <- colCollapse(s)
-s_pasted
+aft_internal <- function() {
+  do.call(
+    mod_methyLImp2_internal,
+    args = c(list(dat = s$input), methyLImp2_internal_args())
+  )
+}
 
-bench::mark(
-apply(s, 2, \(x){paste(x, collapse = "")}),
-apply(t(s), 1, \(x){paste(x, collapse = "")})
-)
+set.seed(1234)
+s <- sim_mat(20, 10, nchr = 1, perc_NA = 0.5, perc_col_NA = 0.5)
+s
 
-split(as.integer(s), f = rep(colnames(s), each = nrow(s)))
-apply()
-
-na_index <- as.data.frame(which(s, arr.ind = TRUE, useNames = FALSE))
-names(na_index) <- c("row_index", "col_index")
-na_index |> head()
-na_index
-collapsed <- fsummarize(
-  fgroup_by(na_index, col_index),
-  row_index = paste(row_index, collapse = ",")
-)
-collapsed$row_index |> nchar() |> max()
-collapsed |> head()
-
-bench::mark(
-  aggregate(row_index ~ col_index, data = na_index, function(x)
-    paste(x, collapse = ",")),
-  fsummarize(
-    fgroup_by(na_index, col_index),
-    row_index = paste(row_index, collapse = ",")
+do.call(
+  "mod_methyLImp2_internal",
+  c(
+    list(dat = s$input),
+    purrr::list_modify(methyLImp2_internal_args(), skip_imputation_ids = purrr::zap()),
+    skip_imputation_ids = "cg1"
   )
 )
-hash
+
+# Test if two results are the same
+# set.seed(1234)
+# s <- sim_mat(10000, 24, nchr = 2, perc_NA = 0.5, perc_col_NA = 0.5)
+# 
+# m <- prev_internal()
+# m1 <- aft_internal()
+# all(dplyr::near(m, m1))
+# 
+# p <- profvis(prev_internal())
+# p1 <- profvis(aft_internal())
+# 
+# p
+# p1

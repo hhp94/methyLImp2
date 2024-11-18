@@ -27,7 +27,8 @@ Imports:
     parallelly,
     future.apply,
     progressr,
-    future
+    future,
+    Rcpp
 Depends: R (>= 4.3.0), ChAMPdata
 URL: https://github.com/annaplaksienko/methyLImp2 
 BugReports: https://github.com/annaplaksienko/methyLImp2/issues 
@@ -44,3 +45,5 @@ Suggests:
 VignetteBuilder: knitr
 Config/testthat/edition: 3
 Language: en-US
+LinkingTo: 
+    Rcpp
