@@ -423,18 +423,16 @@ mod_methyLImp2_internal <- function(
 
   out <- dat
   all_samples <- row.names(dat)
-  all_NA_cols <- na_data$all_NA_cols
-  cols_without_NAs <- setdiff(colnames(dat), all_NA_cols)
 
   for (j in seq_along(pattern_groups)) {
     NArow_names <- pattern_groups[[j]]$NArow_names
     NAcols_names <- pattern_groups[[j]]$NAcols_names
 
     # C is the data without any col with NA
-    C <- dat[NArow_names, cols_without_NAs, drop = FALSE]
+    C <- dat[NArow_names, na_data$complete_cols, drop = FALSE]
 
     non_NA_samples <- setdiff(all_samples, NArow_names)
-    A_full <- dat[non_NA_samples, cols_without_NAs, drop = FALSE]
+    A_full <- dat[non_NA_samples, na_data$complete_cols, drop = FALSE]
     B_full <- dat[non_NA_samples, NAcols_names, drop = FALSE]
 
     imputed_list <- vector(mode = "list", length = minibatch_reps)
@@ -489,34 +487,29 @@ mod_methyLImp2_internal <- function(
 #' @noRd
 #' @keywords internal
 process_na <- function(dat, skip_imputation_ids = NULL) {
-  all_cols <- colnames(dat)
-
-  # remove columns specified in skip_imputation_ids
-  if (!is.null(skip_imputation_ids)) {
-    all_cols <- setdiff(all_cols, skip_imputation_ids)
-    dat <- dat[, all_cols, drop = FALSE]
-  }
   dat_na <- is.na(dat)
   na_cols <- colSums(dat_na)
 
-  # remove columns with no NAs and columns with only 1 non-NA value
-  valid_cols <- colnames(dat_na)[na_cols > 0 & na_cols < (nrow(dat_na) - 1)]
+  # remove columns with no NAs, columns with only 1 non-NA value, and skipped columns
+  valid_cols <- setdiff(
+    names(which(na_cols > 0 & na_cols < (nrow(dat_na) - 1))),
+    skip_imputation_ids
+  )
+
   if (length(valid_cols) == 0) {
     return("No columns with missing values detected.")
   }
 
-  # keep the original column names with any NAs for reference
-  all_NA_cols <- colnames(dat_na)[na_cols > 0]
-
   # subset the matrix to only include columns meeting our criteria
   dat_na <- dat_na[, valid_cols, drop = FALSE]
 
-  # if all the columns have missing values, we cannot do anything
-  if (ncol(dat_na) == ncol(dat)) {
-    return("No CpGs without any missing values; not possible to conduct imputation.")
+  # skip_imputation_ids with no missing can be used to get information but not imputed
+  complete_cols <- which(na_cols == 0)
+  if (length(complete_cols) == 0) {
+    return("No CpGs without any missing values, not possible to conduct imputation.")
   }
 
-  return(list(dat_na = dat_na, all_NA_cols = all_NA_cols))
+  return(list(dat_na = dat_na, complete_cols = names(complete_cols)))
 }
 
 #' Identify and Group Columns by Missing Data Patterns
