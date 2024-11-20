@@ -101,7 +101,7 @@ mod_split_by_chromosomes <- function(
 #' handlers(global = TRUE)
 #' }
 #'
-#' To setup parallel workers, run:
+#' To setup 6 parallel workers for example, run:
 #'
 #' \preformatted{
 #' library(future)
@@ -273,29 +273,32 @@ mod_methyLImp2 <- function(
   }
 
   # check the parallelization set-up
-  {
-    n_workers <- future::nbrOfWorkers()
-    if (parallel && n_workers == 1) {
-      stop("Parallel is TRUE, but only 1 worker available. Call `library(future);plan(multisession, workers = 6)` to setup 6 parallel workers for example")
-    }
-
-    # split the data by chromosomes to see the nchr
-    data_chr_full <- mod_split_by_chromosomes(
-      data = data_full, type = type,
-      annotation = annotation
-    )
-
-    nchr <- length(data_chr_full)
-    if (nchr < n_workers) {
-      warning("Number of chromosomes is less than specified number of workers.")
-    }
-
-    lapply_fn <- if (parallel) {
-      future.apply::future_lapply
-    } else {
-      lapply
-    }
+  n_workers <- future::nbrOfWorkers()
+  if (parallel && n_workers == 1) {
+    stop("`parallel` is TRUE, but only 1 worker available. Call `library(future);plan(multisession, workers = 6)` to setup 6 parallel workers for example")
   }
+
+  if (!parallel && n_workers > 1) {
+    warning("`parallel` is FALSE but multiple workers detected. Running sequentially")
+  }
+
+  # split the data by chromosomes to see the nchr
+  data_chr_full <- mod_split_by_chromosomes(
+    data = data_full, type = type,
+    annotation = annotation
+  )
+
+  nchr <- length(data_chr_full)
+  if (nchr < n_workers) {
+    warning("Number of chromosomes is less than specified number of workers.")
+  }
+
+  lapply_fn <- if (parallel) {
+    future.apply::future_lapply
+  } else {
+    lapply
+  }
+
 
   # check groups
   if (is.null(groups)) {
@@ -308,6 +311,23 @@ mod_methyLImp2 <- function(
     stop("Object provided for the groups argument is not a vector.")
   }
 
+  # check other params
+  if (!is.logical(parallel) || length(parallel) != 1) {
+    stop("`parallel` must be a single logical value (TRUE/FALSE).")
+  }
+
+  if (!is.logical(overwrite_res) || length(overwrite_res) != 1) {
+    stop("`overwrite_res` must be a single logical value (TRUE/FALSE).")
+  }
+
+  if (!(0 < minibatch_frac && minibatch_frac <= 1 && length(minibatch_frac) == 1)) {
+    stop("`minibatch_frac` must be a single numeric value between 0 and 1 (inclusive).")
+  }
+
+  if (!(1 <= minibatch_reps && as.integer(minibatch_reps) == minibatch_reps && length(minibatch_reps) == 1)) {
+    stop("`minibatch_reps` must be a single integer value greater than or equal to 1.")
+  }
+
   unique_groups <- unique(groups)
   ngroups <- length(unique_groups)
   samples_order <- row.names(data_full)
@@ -316,13 +336,12 @@ mod_methyLImp2 <- function(
   for (i in seq_len(ngroups)) {
     curr_group <- unique_groups[i]
     data_group <- data_full[groups == curr_group, ]
-
     data_chr <- vector(mode = "list", length = nchr)
     names(data_chr) <- names(data_chr_full)
     for (j in seq_len(nchr)) {
       data_chr[[j]] <- data_chr_full[[j]][groups == curr_group, ]
     }
-
+    p <- progressr::progressor(length(data_chr))
     # run methyLImp in parallel for each chromosome
     res <- lapply_fn(
       data_chr,
@@ -333,7 +352,8 @@ mod_methyLImp2 <- function(
           max = max,
           skip_imp = skip_imputation_ids,
           minibatch_frac = minibatch_frac,
-          minibatch_reps = minibatch_reps
+          minibatch_reps = minibatch_reps,
+          progressr_obj = p
         )
       },
       future.seed = TRUE
@@ -401,9 +421,9 @@ mod_methyLImp2 <- function(
 #' Default is 1 (we assume beta-value representation of the methylation data).
 #' Can be user provided in case of other types of data.
 #' @inheritParams mod_methyLImp2
+#' @param progressr_obj [progressr::progressor()] object to track progress bar
 #'
 #' @return A numeric matrix \eqn{out} with imputed data is returned.
-#'
 #' @keywords internal
 mod_methyLImp2_internal <- function(
     dat,
@@ -411,7 +431,8 @@ mod_methyLImp2_internal <- function(
     max,
     skip_imputation_ids,
     minibatch_frac,
-    minibatch_reps) {
+    minibatch_reps,
+    progressr_obj = NULL) {
   # process NA and return early if there's an error (all or no cpg has missing etc.)
   na_data <- process_na(dat, skip_imputation_ids)
   if (is.character(na_data)) {
@@ -475,6 +496,9 @@ mod_methyLImp2_internal <- function(
     out[NArow_names, NAcols_names] <- imputed
   }
 
+  if (!is.null(progressr_obj)) {
+    progressr_obj()
+  }
   return(out)
 }
 

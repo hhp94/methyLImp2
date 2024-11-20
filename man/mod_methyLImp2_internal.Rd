@@ -10,7 +10,8 @@ mod_methyLImp2_internal(
   max,
   skip_imputation_ids,
   minibatch_frac,
-  minibatch_reps
+  minibatch_reps,
+  progressr_obj = NULL
 )
 }
 \arguments{
@@ -42,6 +43,8 @@ no mini-batch).}
 a fraction of samples specified above (more times -> better performance but
 more runtime). The default is 1 (as a companion to default fraction of 100\%,
 i.e. no mini-batch).}
+
+\item{progressr_obj}{[progressr::progressor()] object to track progress bar}
 }
 \value{
 A numeric matrix \eqn{out} with imputed data is returned.
