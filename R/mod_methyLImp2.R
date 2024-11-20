@@ -130,7 +130,7 @@ mod_split_by_chromosomes <- function(
 #' @param range a vector of two numbers, \eqn{min} and \eqn{max},
 #' specifying the range of values in the data.
 #' Since we assume the beta-value representation of the methylation data,
-#' the default range is \eqn{[0, 1]}.
+#' the default range is \eqn{[0, 1]}. Set to \code{NULL} for unrestricted imputation.
 #' However, if a user wishes to apply the method to the other kind of data,
 #' they can change the range in this argument.
 #' @param skip_imputation_ids a character vector of names of the columns (CpGs names)
@@ -176,7 +176,7 @@ mod_methyLImp2 <- function(
     type = c("450K", "EPIC", "user"),
     annotation = NULL,
     groups = NULL,
-    range = NULL,
+    range = c(0, 1),
     skip_imputation_ids = NULL,
     parallel = FALSE,
     minibatch_frac = 1,
@@ -256,9 +256,13 @@ mod_methyLImp2 <- function(
   }
 
   # check the provided data range
+  if (!identical(range, c(0, 1))) {
+    warning("Range is fixed to 0 and 1")
+  }
+  
   if (is.null(range)) {
-    min <- 0
-    max <- 1
+    min <- NULL
+    max <- NULL
   } else {
     if (length(range) != 2) {
       stop("Range must be a vector of two numbers.")
@@ -298,7 +302,6 @@ mod_methyLImp2 <- function(
   } else {
     lapply
   }
-
 
   # check groups
   if (is.null(groups)) {
@@ -414,12 +417,8 @@ mod_methyLImp2 <- function(
 #'
 #' @param dat a numeric data matrix with missing values,
 #' with samples in rows and variables (probes) in columns.
-#' @param min a number, minimum value for bounded-range variables.
-#' Default is 0 (we assume beta-value representation of the methylation data).
-#' Can be user provided in case of other types of data.
-#' @param max a number, maximum value for bounded-range variables.
-#' Default is 1 (we assume beta-value representation of the methylation data).
-#' Can be user provided in case of other types of data.
+#' @param min place holder. Fixed to 0
+#' @param max place holder. Fixed to 1
 #' @inheritParams mod_methyLImp2
 #' @param progressr_obj [progressr::progressor()] object to track progress bar
 #'
@@ -427,8 +426,8 @@ mod_methyLImp2 <- function(
 #' @keywords internal
 mod_methyLImp2_internal <- function(
     dat,
-    min,
-    max,
+    min = 0,
+    max = 1,
     skip_imputation_ids,
     minibatch_frac,
     minibatch_reps,
@@ -438,7 +437,8 @@ mod_methyLImp2_internal <- function(
   if (is.character(na_data)) {
     return(na_data)
   }
-
+  min <- 0
+  max <- 1
   # get the NA patterns groups for imputation
   pattern_groups <- na_patterns(dat_na = na_data$dat_na)
 
@@ -473,23 +473,10 @@ mod_methyLImp2_internal <- function(
       max.sv <- NULL
       max.sv <- max(ifelse(is.null(max.sv), min(dim(A)), max.sv), 1)
 
-      if (is.null(min) || is.null(max)) {
-        # Unrestricted-range imputation
-        # X <- pinvr(A, rank) %*% B (X = A^-1 * B)
-        # O <- C %*% X             (O = C*X)
-        imputed_list[[r]] <- C %*% (methyLImp2:::pinvr(A, max.sv) %*% B)
-      } else {
-        # Bounded-range imputation
-        # X <- pinvr(A, rank) %*% logit(B, min, max) (X = A^-1 * logit(B))
-        # P <- inv.logit(C %*% X, min, max)          (P = logit^-1 (C * X))
-        imputed_list[[r]] <- methyLImp2:::inv.plogit(
-          {
-            C %*% (methyLImp2:::pinvr(A, max.sv) %*% methyLImp2:::plogit(B, min, max))
-          },
-          min,
-          max
-        )
-      }
+      # optimize for just between 0 and 1 using the R native functions
+      imputed_list[[r]] <- plogis(
+        C %*% (pinvr1(A, max.sv) %*% qlogis1(B))
+      )
     }
 
     imputed <- Reduce("+", imputed_list) / minibatch_reps

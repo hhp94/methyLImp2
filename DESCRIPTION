@@ -28,7 +28,8 @@ Imports:
     future.apply,
     progressr,
     future,
-    Rcpp
+    Rcpp,
+    bootSVD
 Depends: R (>= 4.3.0), ChAMPdata
 URL: https://github.com/annaplaksienko/methyLImp2 
 BugReports: https://github.com/annaplaksienko/methyLImp2/issues 

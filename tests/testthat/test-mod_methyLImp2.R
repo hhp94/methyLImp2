@@ -1,23 +1,26 @@
 test_that("same results", {
   set.seed(1234)
-  beta_sim <- sim_mat(500, 10, perc_NA = 0.2)
-
-  set.seed(1234)
-  m <- methyLImp2(
-    input = beta_sim$input,
-    type = "user",
-    annotation = beta_sim$user,
-    BPPARAM = BiocParallel::SerialParam(RNGseed = 1234)
-  )
-
-  set.seed(1234)
-  m_mod <- mod_methyLImp2(
-    input = beta_sim$input,
-    type = "user",
-    annotation = beta_sim$user
-  )
-
-  expect_equal(m, m_mod)
+  serial <- BiocParallel::SerialParam()
+  results <- replicate(5, {
+    beta_sim <- sim_mat(750, 15, perc_NA = 0.5, perc_col_NA = 0.5)
+    
+    m <- methyLImp2(
+      input = beta_sim$input,
+      type = "user",
+      annotation = beta_sim$user, 
+      BPPARAM = serial
+    )
+    
+    m_mod <- mod_methyLImp2(
+      input = beta_sim$input,
+      type = "user",
+      annotation = beta_sim$user
+    )
+    
+    all.equal(m, m_mod)
+  })
+  
+  expect_true(all(results))
 })
 
 test_that("mod_methyLImp2 input validations", {

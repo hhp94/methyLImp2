@@ -6,8 +6,8 @@
 \usage{
 mod_methyLImp2_internal(
   dat,
-  min,
-  max,
+  min = 0,
+  max = 1,
   skip_imputation_ids,
   minibatch_frac,
   minibatch_reps,
@@ -18,13 +18,9 @@ mod_methyLImp2_internal(
 \item{dat}{a numeric data matrix with missing values,
 with samples in rows and variables (probes) in columns.}
 
-\item{min}{a number, minimum value for bounded-range variables.
-Default is 0 (we assume beta-value representation of the methylation data).
-Can be user provided in case of other types of data.}
+\item{min}{place holder. Fixed to 0}
 
-\item{max}{a number, maximum value for bounded-range variables.
-Default is 1 (we assume beta-value representation of the methylation data).
-Can be user provided in case of other types of data.}
+\item{max}{place holder. Fixed to 1}
 
 \item{skip_imputation_ids}{a character vector of names of the columns (CpGs names)
 for which \emph{not} to perform the imputation. If \code{NULL}, all columns
