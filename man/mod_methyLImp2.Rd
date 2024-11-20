@@ -93,7 +93,7 @@ library(progressr)
 handlers(global = TRUE)
 }
 
-To setup parallel workers, run:
+To setup 6 parallel workers for example, run:
 
 \preformatted{
 library(future)

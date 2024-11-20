@@ -16,51 +16,85 @@ test_that("same results", {
     type = "user",
     annotation = beta_sim$user
   )
-  
+
   expect_equal(m, m_mod)
 })
 
-test_that("mod_methyLImp2_internal handles NA patterns correctly", {
-  # Generate test data
-  set.seed(123)
-  sim_data <- sim_mat(n = 100, m = 100, nchr = 2, perc_NA = 0.1)
+test_that("mod_methyLImp2 input validations", {
+  set.seed(1234)
+  sim <- function() {
+    sim_mat(500, 10, perc_NA = 0.2)
+  }
+  beta_sim <- sim()
+  beta_sim$input[, 1] <- NA
+  # All NA column
+  expect_error(mod_methyLImp2(
+    input = beta_sim$input,
+    type = "user",
+    annotation = beta_sim$user
+  ))
+  # All NA row
+  beta_sim <- sim()
+  beta_sim$input[1, ] <- NA
+  expect_error(mod_methyLImp2(
+    input = beta_sim$input,
+    type = "user",
+    annotation = beta_sim$user
+  ))
+})
 
-  # Subset to chr1 data
-  test_mat <- t(sim_data$input[sim_data$user$chr == "chr1", ])
-  # Fill NAs in some columns because otherwise no CpGs has no missing
-  test_mat[is.na(test_mat[, 1]), 1] <- 0.5
-  test_mat[is.na(test_mat[, 2]), 2] <- 0.5
+test_that("skip imputation id works", {
+  set.seed(1234)
+  beta_sim <- sim_mat(500, 10, perc_NA = 0.5)
+  
+  # Make sure the cgs we are skipping has missing data
+  na_cols <- colSums(is.na(beta_sim$input))
+  cg <- which(na_cols > 0)[1:3]
+  expect_true(anyNA(beta_sim$input[, cg]))
 
-  # Test case 1: Matrix with NAs (should return matrix)
-  args_methyLImp2_internal <- list(
-    dat = test_mat,
-    skip_imputation_ids = NULL,
-    min = 0,
-    max = 1,
-    minibatch_frac = 1,
-    minibatch_reps = 1
+  argv <- methyLImp2_internal_args()
+  argv$skip_imputation_ids <- NULL
+  
+  # same results given skip imputation ids
+  m <- suppressWarnings({
+    do.call(
+      "methyLImp2_internal",
+      c(
+        list(dat = beta_sim$input),
+        argv,
+        list(skip_imputation_ids = cg)
+      )
+    )
+  })
+  m1 <- do.call(
+    "mod_methyLImp2_internal",
+    c(
+      list(dat = beta_sim$input),
+      argv,
+      list(skip_imputation_ids = names(cg))
+    )
   )
-  for (i in list("mod_methyLImp2_internal", "methyLImp2_internal")) {
-    result <- do.call(i, args_methyLImp2_internal)
-    expect_true(is.matrix(result))
-  }
-  # Test case 2: Matrix with no NAs (should return string)
-  test_mat_no_na <- test_mat
-  test_mat_no_na[is.na(test_mat_no_na)] <- 0.5
-  args_methyLImp2_internal$dat <- test_mat_no_na
+  expect_equal(m, m1)
 
-  for (i in list("mod_methyLImp2_internal", "methyLImp2_internal")) {
-    result <- do.call(i, args_methyLImp2_internal)
-    expect_equal(result, "No columns with missing values detected.")
-  }
+  expect_error(
+    do.call(
+      "mod_methyLImp2",
+      c(
+        list(dat = beta_sim$input),
+        argv,
+        list(skip_imputation_ids = "INVALID CPG")
+      )
+    )
+  )
 
-  # Test case 3: Matrix with all NAs in a column
-  test_mat_all_na <- test_mat
-  test_mat_all_na[, "cg1"] <- NA
-  args_methyLImp2_internal$dat <- test_mat_all_na
-
-  for (i in list("mod_methyLImp2_internal", "methyLImp2_internal")) {
-    result <- do.call(i, args_methyLImp2_internal)
-    expect_true(ncol(result) < ncol(test_mat))
-  }
+  expect_error(
+    do.call(
+      "mod_methyLImp2",
+      c(
+        list(dat = beta_sim$input),
+        argv,
+        list(skip_imputation_ids = 1)
+      )
+    )
+  )
 })

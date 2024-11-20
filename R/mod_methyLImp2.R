@@ -101,7 +101,7 @@ mod_split_by_chromosomes <- function(
 #' handlers(global = TRUE)
 #' }
 #'
-#' To setup parallel workers, run:
+#' To setup 6 parallel workers for example, run:
 #'
 #' \preformatted{
 #' library(future)
@@ -215,6 +215,15 @@ mod_methyLImp2 <- function(
   stopifnot(length(row.names(data_full)) == length(unique(row.names(data_full))))
   stopifnot(length(colnames(data_full)) == length(unique(colnames(data_full))))
 
+  # check all NA rows and columns
+  dat_na <- is.na(data_full)
+  if (any(colSums(dat_na) == nrow(dat_na))) {
+    stop("Columns with all NAs detected")
+  }
+  if (any(rowSums(dat_na) == ncol(dat_na))) {
+    stop("Rows with all NAs detected")
+  }
+
   # check dim
   if (nrow(data_full) > ncol(data_full)) {
     warning("methyLImp2 expects samples to be rows")
@@ -264,29 +273,32 @@ mod_methyLImp2 <- function(
   }
 
   # check the parallelization set-up
-  {
-    n_workers <- future::nbrOfWorkers()
-    if (parallel && n_workers == 1) {
-      stop("Parallel is TRUE, but only 1 worker available. Call `library(future);plan(multisession, workers = 6)` to setup 6 parallel workers for example")
-    }
-
-    # split the data by chromosomes to see the nchr
-    data_chr_full <- mod_split_by_chromosomes(
-      data = data_full, type = type,
-      annotation = annotation
-    )
-
-    nchr <- length(data_chr_full)
-    if (nchr < n_workers) {
-      warning("Number of chromosomes is less than specified number of workers.")
-    }
-
-    lapply_fn <- if (parallel) {
-      future.apply::future_lapply
-    } else {
-      lapply
-    }
+  n_workers <- future::nbrOfWorkers()
+  if (parallel && n_workers == 1) {
+    stop("`parallel` is TRUE, but only 1 worker available. Call `library(future);plan(multisession, workers = 6)` to setup 6 parallel workers for example")
   }
+
+  if (!parallel && n_workers > 1) {
+    warning("`parallel` is FALSE but multiple workers detected. Running sequentially")
+  }
+
+  # split the data by chromosomes to see the nchr
+  data_chr_full <- mod_split_by_chromosomes(
+    data = data_full, type = type,
+    annotation = annotation
+  )
+
+  nchr <- length(data_chr_full)
+  if (nchr < n_workers) {
+    warning("Number of chromosomes is less than specified number of workers.")
+  }
+
+  lapply_fn <- if (parallel) {
+    future.apply::future_lapply
+  } else {
+    lapply
+  }
+
 
   # check groups
   if (is.null(groups)) {
@@ -299,6 +311,23 @@ mod_methyLImp2 <- function(
     stop("Object provided for the groups argument is not a vector.")
   }
 
+  # check other params
+  if (!is.logical(parallel) || length(parallel) != 1) {
+    stop("`parallel` must be a single logical value (TRUE/FALSE).")
+  }
+
+  if (!is.logical(overwrite_res) || length(overwrite_res) != 1) {
+    stop("`overwrite_res` must be a single logical value (TRUE/FALSE).")
+  }
+
+  if (!(0 < minibatch_frac && minibatch_frac <= 1 && length(minibatch_frac) == 1)) {
+    stop("`minibatch_frac` must be a single numeric value between 0 and 1 (inclusive).")
+  }
+
+  if (!(1 <= minibatch_reps && as.integer(minibatch_reps) == minibatch_reps && length(minibatch_reps) == 1)) {
+    stop("`minibatch_reps` must be a single integer value greater than or equal to 1.")
+  }
+
   unique_groups <- unique(groups)
   ngroups <- length(unique_groups)
   samples_order <- row.names(data_full)
@@ -307,13 +336,12 @@ mod_methyLImp2 <- function(
   for (i in seq_len(ngroups)) {
     curr_group <- unique_groups[i]
     data_group <- data_full[groups == curr_group, ]
-
     data_chr <- vector(mode = "list", length = nchr)
     names(data_chr) <- names(data_chr_full)
     for (j in seq_len(nchr)) {
       data_chr[[j]] <- data_chr_full[[j]][groups == curr_group, ]
     }
-
+    p <- progressr::progressor(length(data_chr))
     # run methyLImp in parallel for each chromosome
     res <- lapply_fn(
       data_chr,
@@ -324,7 +352,8 @@ mod_methyLImp2 <- function(
           max = max,
           skip_imp = skip_imputation_ids,
           minibatch_frac = minibatch_frac,
-          minibatch_reps = minibatch_reps
+          minibatch_reps = minibatch_reps,
+          progressr_obj = p
         )
       },
       future.seed = TRUE
@@ -392,9 +421,9 @@ mod_methyLImp2 <- function(
 #' Default is 1 (we assume beta-value representation of the methylation data).
 #' Can be user provided in case of other types of data.
 #' @inheritParams mod_methyLImp2
+#' @param progressr_obj [progressr::progressor()] object to track progress bar
 #'
 #' @return A numeric matrix \eqn{out} with imputed data is returned.
-#'
 #' @keywords internal
 mod_methyLImp2_internal <- function(
     dat,
@@ -402,48 +431,48 @@ mod_methyLImp2_internal <- function(
     max,
     skip_imputation_ids,
     minibatch_frac,
-    minibatch_reps) {
+    minibatch_reps,
+    progressr_obj = NULL) {
   # process NA and return early if there's an error (all or no cpg has missing etc.)
   na_data <- process_na(dat, skip_imputation_ids)
   if (is.character(na_data)) {
     return(na_data)
   }
-  
+
   # get the NA patterns groups for imputation
   pattern_groups <- na_patterns(dat_na = na_data$dat_na)
-  
+
   out <- dat
   all_samples <- row.names(dat)
-  all_NA_cols <- na_data$all_NA_cols
-  cols_without_NAs <- setdiff(colnames(dat), all_NA_cols)
-  
+
   for (j in seq_along(pattern_groups)) {
     NArow_names <- pattern_groups[[j]]$NArow_names
     NAcols_names <- pattern_groups[[j]]$NAcols_names
-    
+
     # C is the data without any col with NA
-    C <- dat[NArow_names, cols_without_NAs, drop = FALSE]
-    
+    C <- dat[NArow_names, na_data$complete_cols, drop = FALSE]
+
     non_NA_samples <- setdiff(all_samples, NArow_names)
-    A_full <- dat[non_NA_samples, cols_without_NAs, drop = FALSE]
+    A_full <- dat[non_NA_samples, na_data$complete_cols, drop = FALSE]
     B_full <- dat[non_NA_samples, NAcols_names, drop = FALSE]
-    
+
     imputed_list <- vector(mode = "list", length = minibatch_reps)
-    
+
     for (r in seq_len(minibatch_reps)) {
-      sample_size <- ifelse(nrow(A_full) > ceiling(nrow(A_full) * minibatch_frac),
-                            ceiling(nrow(A_full) * minibatch_frac),
-                            nrow(A_full)
+      sample_size <- ifelse(
+        nrow(A_full) > ceiling(nrow(A_full) * minibatch_frac),
+        ceiling(nrow(A_full) * minibatch_frac),
+        nrow(A_full)
       )
-      
+
       chosen_rows <- sort(sample(row.names(A_full), size = sample_size))
       A <- A_full[chosen_rows, , drop = FALSE]
       B <- B_full[chosen_rows, , drop = FALSE]
-      
+
       # updates or computes max.sv from A. Negative or zero value not allowed
       max.sv <- NULL
       max.sv <- max(ifelse(is.null(max.sv), min(dim(A)), max.sv), 1)
-      
+
       if (is.null(min) || is.null(max)) {
         # Unrestricted-range imputation
         # X <- pinvr(A, rank) %*% B (X = A^-1 * B)
@@ -453,16 +482,23 @@ mod_methyLImp2_internal <- function(
         # Bounded-range imputation
         # X <- pinvr(A, rank) %*% logit(B, min, max) (X = A^-1 * logit(B))
         # P <- inv.logit(C %*% X, min, max)          (P = logit^-1 (C * X))
-        imputed_list[[r]] <- methyLImp2:::inv.plogit(C %*%
-                                                       (methyLImp2:::pinvr(A, max.sv) %*%
-                                                          methyLImp2:::plogit(B, min, max)), min, max)
+        imputed_list[[r]] <- methyLImp2:::inv.plogit(
+          {
+            C %*% (methyLImp2:::pinvr(A, max.sv) %*% methyLImp2:::plogit(B, min, max))
+          },
+          min,
+          max
+        )
       }
     }
-    
+
     imputed <- Reduce("+", imputed_list) / minibatch_reps
     out[NArow_names, NAcols_names] <- imputed
   }
-  
+
+  if (!is.null(progressr_obj)) {
+    progressr_obj()
+  }
   return(out)
 }
 
@@ -475,34 +511,29 @@ mod_methyLImp2_internal <- function(
 #' @noRd
 #' @keywords internal
 process_na <- function(dat, skip_imputation_ids = NULL) {
-  all_cols <- colnames(dat)
-  
-  # remove columns specified in skip_imputation_ids
-  if (!is.null(skip_imputation_ids)) {
-    all_cols <- setdiff(all_cols, skip_imputation_ids)
-    dat <- dat[, all_cols, drop = FALSE]
-  }
   dat_na <- is.na(dat)
   na_cols <- colSums(dat_na)
-  
-  # remove columns with no NAs and columns with only 1 non-NA value
-  valid_cols <- colnames(dat_na)[na_cols > 0 & na_cols < (nrow(dat_na) - 1)]
+
+  # remove columns with no NAs, columns with only 1 non-NA value, and skipped columns
+  valid_cols <- setdiff(
+    names(which(na_cols > 0 & na_cols < (nrow(dat_na) - 1))),
+    skip_imputation_ids
+  )
+
   if (length(valid_cols) == 0) {
     return("No columns with missing values detected.")
   }
-  
-  # keep the original column names with any NAs for reference
-  all_NA_cols <- colnames(dat_na)[na_cols > 0]
-  
+
   # subset the matrix to only include columns meeting our criteria
   dat_na <- dat_na[, valid_cols, drop = FALSE]
-  
-  # if all the columns have missing values, we cannot do anything
-  if (ncol(dat_na) == ncol(dat)) {
-    return("No CpGs without any missing values; not possible to conduct imputation.")
+
+  # skip_imputation_ids with no missing can be used to get information but not imputed
+  complete_cols <- which(na_cols == 0)
+  if (length(complete_cols) == 0) {
+    return("No CpGs without any missing values, not possible to conduct imputation.")
   }
-  
-  return(list(dat_na = dat_na, all_NA_cols = all_NA_cols))
+
+  return(list(dat_na = dat_na, complete_cols = names(complete_cols)))
 }
 
 #' Identify and Group Columns by Missing Data Patterns
@@ -519,29 +550,23 @@ process_na <- function(dat, skip_imputation_ids = NULL) {
 #' @keywords internal
 #' @noRd
 na_patterns <- function(dat_na) {
-  # Convert the logical matrix into 1/0 matrix for pattern identification
-  dat_na_int <- matrix(as.integer(dat_na),
-                       nrow = nrow(dat_na), ncol = ncol(dat_na),
-                       dimnames = dimnames(dat_na)
-  )
-  
-  # Create a unique string representation of each column's NA pattern
-  pattern_strings <- apply(dat_na_int, 2, function(x) paste0(x, collapse = ""))
-  
-  # Group column names by their missing data patterns
+  # concatenate the 1s and 0s column (CpGs) wise to create a unique pattern
+  pattern_strings <- apply_paste0(dat_na)
+
+  # group column names by their missing data patterns
   pattern_groups_names <- split(colnames(dat_na), pattern_strings)
-  
-  # Initialize the list to store pattern groups
-  pattern_groups <- vector("list", length(pattern_groups_names))
+
+  # Get all sample names once
   all_samples <- row.names(dat_na)
-  # Iterate over each unique pattern to collect row and column names
-  for (i in seq_along(pattern_groups_names)) {
-    col_names <- pattern_groups_names[[i]]
-    # Identify rows (samples) with NAs in this pattern
+
+  # Use lapply to process each pattern group
+  pattern_groups <- lapply(pattern_groups_names, function(col_names) {
     curr_pattern <- dat_na[, col_names[1]]
     NArow_names <- all_samples[curr_pattern]
-    pattern_groups[[i]] <- list(NArow_names = NArow_names, NAcols_names = col_names)
-  }
+    list(NArow_names = NArow_names, NAcols_names = col_names)
+  })
+
+  # Add names to the resulting list
   names(pattern_groups) <- paste("group", seq_along(pattern_groups), sep = "_")
   return(pattern_groups)
 }

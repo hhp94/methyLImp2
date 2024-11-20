@@ -1,49 +1,58 @@
 library(profvis)
-library(matrixStats)
+library(ggplot2)
 
 load_all()
+
+# Changelog -----
 
 # colsums once
 # split internal into multiple functions
 # change skip ids into vector of character instead because its more intuitive
+# add validation for skip ids. right now -1 and ids not in the range are still imputed
 # change passing around of id numbers to passing around characters
 # change the look up apply loop with split function
 # make sure the colnames and row.names are unique and annotation must have no repeat
 
-s <- sim_mat(10000, 500, nchr = 2, perc_NA = 0.5)$input |> is.na()
-# s <- is.na(mtcars)
-s |> head1()
-s <- matrix(as.numeric(s), nrow = nrow(s), ncol = ncol(s))
-s |> head1()
-
-s_pasted <- colCollapse(s)
-s_pasted
-
-bench::mark(
-apply(s, 2, \(x){paste(x, collapse = "")}),
-apply(t(s), 1, \(x){paste(x, collapse = "")})
-)
-
-split(as.integer(s), f = rep(colnames(s), each = nrow(s)))
-apply()
-
-na_index <- as.data.frame(which(s, arr.ind = TRUE, useNames = FALSE))
-names(na_index) <- c("row_index", "col_index")
-na_index |> head()
-na_index
-collapsed <- fsummarize(
-  fgroup_by(na_index, col_index),
-  row_index = paste(row_index, collapse = ",")
-)
-collapsed$row_index |> nchar() |> max()
-collapsed |> head()
-
-bench::mark(
-  aggregate(row_index ~ col_index, data = na_index, function(x)
-    paste(x, collapse = ",")),
-  fsummarize(
-    fgroup_by(na_index, col_index),
-    row_index = paste(row_index, collapse = ",")
+prev_internal <- function(s) {
+  do.call(
+    methyLImp2_internal,
+    args = c(list(dat = s), methyLImp2_internal_args())
   )
+}
+
+aft_internal <- function(s) {
+  do.call(
+    mod_methyLImp2_internal,
+    args = c(list(dat = s), methyLImp2_internal_args())
+  )
+}
+
+# Test if two results are the same ----
+set.seed(1234)
+s <- sim_mat(20000, 100, nchr = 2, perc_NA = 0.7, perc_col_NA = 0.05)
+# m <- prev_internal(s$input)
+# m1 <- aft_internal(s$input)
+# all(dplyr::near(m, m1))
+
+# library(progressr)
+# handlers(global = TRUE)
+# mod_methyLImp2(input = s$input, type = "user", annotation = s$user)
+
+# parallel ----
+# has to install() first
+library(methyLImp2)
+library(future)
+library(progressr)
+library(future)
+handlers(global = TRUE)
+
+plan(multisession, workers = 6)
+set.seed(1234)
+s <- sim_mat(60000, 100, nchr = 6, perc_NA = 0.7, perc_col_NA = 0.05)
+m <- mod_methyLImp2(
+  input = s$input, 
+  type = "user", 
+  annotation = s$user, 
+  parallel = TRUE
 )
-hash
+plan(sequential)
