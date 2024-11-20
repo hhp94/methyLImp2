@@ -10,7 +10,7 @@ mod_methyLImp2(
   type = c("450K", "EPIC", "user"),
   annotation = NULL,
   groups = NULL,
-  range = NULL,
+  range = c(0, 1),
   skip_imputation_ids = NULL,
   parallel = FALSE,
   minibatch_frac = 1,
@@ -46,7 +46,7 @@ The default is NULL, so all samples are considered as one group.}
 \item{range}{a vector of two numbers, \eqn{min} and \eqn{max},
 specifying the range of values in the data.
 Since we assume the beta-value representation of the methylation data,
-the default range is \eqn{[0, 1]}.
+the default range is \eqn{[0, 1]}. Set to \code{NULL} for unrestricted imputation.
 However, if a user wishes to apply the method to the other kind of data,
 they can change the range in this argument.}
 
