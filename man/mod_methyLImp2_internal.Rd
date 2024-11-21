@@ -48,4 +48,3 @@ A numeric matrix \eqn{out} with imputed data is returned.
 \description{
 Impute missing values in methylation dataset
 }
-\keyword{internal}

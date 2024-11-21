@@ -423,7 +423,7 @@ mod_methyLImp2 <- function(
 #' @param progressr_obj [progressr::progressor()] object to track progress bar
 #'
 #' @return A numeric matrix \eqn{out} with imputed data is returned.
-#' @keywords internal
+#' @export
 mod_methyLImp2_internal <- function(
     dat,
     min = 0,
